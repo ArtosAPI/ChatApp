@@ -23,55 +23,85 @@ public class MessageAdapter extends ArrayAdapter<ChatActivity.Message> {
     @Override
     public View getView(int position, View convertView, ViewGroup parent) {
         ChatActivity.Message message = getItem(position);
-        if (message == null || message.status == null) {
-            return convertView;
-        }
-        ViewHolder holder;
 
-        if (convertView == null) {
-            holder = new ViewHolder();
-            if (message.senderId.equals(currentUserId)) {
-                convertView = LayoutInflater.from(getContext())
-                        .inflate(R.layout.message_item_right, parent, false);
-            } else {
-                convertView = LayoutInflater.from(getContext())
-                        .inflate(R.layout.message_item_left, parent, false);
-            }
-            holder.tvMessage = convertView.findViewById(R.id.tvMessage);
-            holder.tvTime = convertView.findViewById(R.id.tvTime);
-            holder.tvStatus = convertView.findViewById(R.id.tvStatus); // Добавьте эту строку
-            convertView.setTag(holder);
-        } else {
-            holder = (ViewHolder) convertView.getTag();
+        if (message.deleted) {
+            return getDeletedView(convertView, parent);
         }
 
-        // Форматирование времени
-        SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
-        String time = sdf.format(new Date(message.timestamp));
+        int requiredLayoutType = message.senderId.equals(currentUserId) ? 1 : 0;
 
-        holder.tvMessage.setText(message.text);
-        holder.tvTime.setText(time);
-
-        if (holder.tvStatus != null) {
-            if (message.senderId.equals(currentUserId)) {
-                holder.tvStatus.setText(getStatusIcon(message.status));
-                holder.tvStatus.setVisibility(View.VISIBLE);
-            } else {
-                // Для чужих сообщений скрываем статус
-                holder.tvStatus.setVisibility(View.GONE);
-            }
+        if (convertView == null || getItemViewType(position) != requiredLayoutType) {
+            convertView = createNewView(message, parent);
         }
+
+        ViewHolder holder = (ViewHolder) convertView.getTag();
+        setupMessageView(holder, message);
 
         return convertView;
     }
 
-    private String getStatusIcon(String status) {
-        if (status == null) {
-            return "✓"; // Или другое значение по умолчанию
+    @Override
+    public int getItemViewType(int position) {
+        ChatActivity.Message message = getItem(position);
+        return message.senderId.equals(currentUserId) ? 1 : 0;
+    }
+
+    @Override
+    public int getViewTypeCount() {
+        return 2;
+    }
+
+    private View getDeletedView(View convertView, ViewGroup parent) {
+        if (convertView == null || convertView.getId() != R.id.tvDeleted) {
+            convertView = LayoutInflater.from(getContext())
+                    .inflate(R.layout.message_item_deleted, parent, false);
         }
+        TextView tvDeleted = convertView.findViewById(R.id.tvDeleted);
+        tvDeleted.setText("Сообщение удалено");
+        return convertView;
+    }
+
+    private View createNewView(ChatActivity.Message message, ViewGroup parent) {
+        View view;
+        ViewHolder holder = new ViewHolder();
+
+        if (message.senderId.equals(currentUserId)) {
+            view = LayoutInflater.from(getContext())
+                    .inflate(R.layout.message_item_right, parent, false);
+        } else {
+            view = LayoutInflater.from(getContext())
+                    .inflate(R.layout.message_item_left, parent, false);
+        }
+
+        holder.tvMessage = view.findViewById(R.id.tvMessage);
+        holder.tvTime = view.findViewById(R.id.tvTime);
+        holder.tvStatus = view.findViewById(R.id.tvStatus);
+        view.setTag(holder);
+
+        return view;
+    }
+
+    private void setupMessageView(ViewHolder holder, ChatActivity.Message message) {
+        SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
+        String time = sdf.format(new Date(message.timestamp));
+
+        String messageText = message.edited ? message.text + " (изменено)" : message.text;
+        holder.tvMessage.setText(messageText);
+        holder.tvTime.setText(time);
+
+        if (message.senderId.equals(currentUserId)) {
+            holder.tvStatus.setText(getStatusIcon(message.status));
+            holder.tvStatus.setVisibility(View.VISIBLE);
+        } else {
+            holder.tvStatus.setVisibility(View.GONE);
+        }
+    }
+
+    private String getStatusIcon(String status) {
+        if (status == null) return "✓";
         switch (status) {
             case "DELIVERED": return "✓✓";
-            case "READ": return "✓✓\uD83D\uDD12";
+            case "READ": return "✓✓✓";
             default: return "✓";
         }
     }

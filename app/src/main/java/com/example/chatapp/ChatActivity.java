@@ -1,20 +1,26 @@
 package com.example.chatapp;
 
+import android.app.AlertDialog;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.os.Bundle;
-
+import android.view.ContextMenu;
 import android.view.LayoutInflater;
+import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ListView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.appcompat.widget.PopupMenu;
 
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.database.ChildEventListener;
@@ -33,21 +39,25 @@ import java.util.Locale;
 public class ChatActivity extends AppCompatActivity {
     private String chatId;
     private String currentUserId;
-    private String globalMessageId;
     private DatabaseReference messagesRef, usersRef;
     private ListView messagesLv;
     private EditText messageEt;
     private Button sendBtn;
     private List<Message> messageList = new ArrayList<>();
-    private ArrayAdapter<Message> adapter;
+    private MessageAdapter adapter;
+
+    private Message selectedMessage;
+    private int selectedPosition;
 
     @Override
     protected void onResume() {
         super.onResume();
-        // Помечаем сообщения собеседника как "READ"
+        markMessagesAsRead();
+    }
+
+    private void markMessagesAsRead() {
         for (Message message : messageList) {
             if (!message.senderId.equals(currentUserId) && !"READ".equals(message.status)) {
-                // Используем message.messageId
                 messagesRef.child(message.messageId).child("status").setValue("READ");
             }
         }
@@ -69,13 +79,104 @@ public class ChatActivity extends AppCompatActivity {
         sendBtn = findViewById(R.id.sendBtn);
 
         setupAdapter();
-
         loadMessages();
+        setupListViewLongClick();
 
         sendBtn.setOnClickListener(v -> sendMessage());
+    }
 
-        // Уведомления о новых сообщениях
-        // Можно реализовать через Firebase Cloud Messaging или локальные уведомления
+    private void setupListViewLongClick() {
+        messagesLv.setOnItemLongClickListener(new AdapterView.OnItemLongClickListener() {
+            @Override
+            public boolean onItemLongClick(AdapterView<?> parent, View view, int position, long id) {
+                if (position < 0 || position >= messageList.size()) return false;
+
+                selectedMessage = messageList.get(position);
+                if (selectedMessage == null || !selectedMessage.senderId.equals(currentUserId)) {
+                    return false;
+                }
+
+                showPopupMenu(view);
+                return true;
+            }
+        });
+    }
+
+    private void showPopupMenu(View anchorView) {
+        PopupMenu popup = new PopupMenu(this, anchorView);
+        popup.getMenuInflater().inflate(R.menu.message_context_menu, popup.getMenu());
+
+        popup.setOnMenuItemClickListener(item -> {
+            if (selectedMessage == null) return false;
+
+            int id = item.getItemId();
+            if (id == R.id.menu_edit) {
+                showEditDialog();
+                return true;
+            } else if (id == R.id.menu_delete) {
+                showDeleteDialog();
+                return true;
+            }
+            return false;
+        });
+
+        popup.show();
+    }
+
+    @Override
+    public void onCreateContextMenu(ContextMenu menu, View v, ContextMenu.ContextMenuInfo menuInfo) {
+        super.onCreateContextMenu(menu, v, menuInfo);
+        getMenuInflater().inflate(R.menu.message_context_menu, menu);
+    }
+
+    @Override
+    public boolean onContextItemSelected(MenuItem item) {
+        if (selectedMessage == null) return false;
+
+        if (item.getItemId() == R.id.menu_edit) {
+            showEditDialog();
+            return true;
+        } else if (item.getItemId() == R.id.menu_delete) {
+            showDeleteDialog();
+            return true;
+        }
+        return super.onContextItemSelected(item);
+    }
+
+    private void showEditDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Редактировать сообщение");
+
+        final EditText input = new EditText(this);
+        input.setText(selectedMessage.text);
+        builder.setView(input);
+
+        builder.setPositiveButton("Сохранить", (dialog, which) -> {
+            String newText = input.getText().toString().trim();
+            if (!newText.isEmpty() && !newText.equals(selectedMessage.text)) {
+                updateMessage(newText);
+            }
+        });
+        builder.setNegativeButton("Отмена", null);
+        builder.show();
+    }
+
+    private void updateMessage(String newText) {
+        messagesRef.child(selectedMessage.messageId).child("text").setValue(newText);
+        messagesRef.child(selectedMessage.messageId).child("edited").setValue(true);
+    }
+
+    private void showDeleteDialog() {
+        new AlertDialog.Builder(this)
+                .setTitle("Удалить сообщение?")
+                .setMessage("Это действие нельзя отменить")
+                .setPositiveButton("Удалить", (dialog, which) -> deleteMessage())
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
+    private void deleteMessage() {
+        messagesRef.child(selectedMessage.messageId).child("deleted").setValue(true);
     }
 
     private void loadMessages() {
@@ -83,14 +184,14 @@ public class ChatActivity extends AppCompatActivity {
             @Override
             public void onChildAdded(@NonNull DataSnapshot snapshot, String previousChildName) {
                 Message msg = snapshot.getValue(Message.class);
-                msg.messageId = snapshot.getKey(); // Сохраняем ID сообщения
+                msg.messageId = snapshot.getKey();
                 messageList.add(msg);
                 adapter.notifyDataSetChanged();
+                scrollToBottom();
             }
 
             @Override
             public void onChildChanged(@NonNull DataSnapshot snapshot, String previousChildName) {
-                // Обработка изменений статуса
                 Message updatedMsg = snapshot.getValue(Message.class);
                 for (int i = 0; i < messageList.size(); i++) {
                     if (messageList.get(i).messageId.equals(updatedMsg.messageId)) {
@@ -100,10 +201,15 @@ public class ChatActivity extends AppCompatActivity {
                     }
                 }
             }
+
             @Override public void onChildRemoved(@NonNull DataSnapshot snapshot) {}
             @Override public void onChildMoved(@NonNull DataSnapshot snapshot, String previousChildName) {}
             @Override public void onCancelled(@NonNull DatabaseError error) {}
         });
+    }
+
+    private void scrollToBottom() {
+        messagesLv.post(() -> messagesLv.smoothScrollToPosition(messageList.size() - 1));
     }
 
     private void setupAdapter() {
@@ -112,30 +218,26 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void sendMessage() {
-        String text = messageEt.getText().toString();
-        if (!text.isEmpty()) {
-            // Получаем никнейм текущего пользователя из БД
-            usersRef.child(currentUserId).addListenerForSingleValueEvent(new ValueEventListener() {
-                @Override
-                public void onDataChange(@NonNull DataSnapshot snapshot) {
-                    User user = snapshot.getValue(User.class);
-                    String messageId = messagesRef.push().getKey();
-                    Message message = new Message(
-                            currentUserId,
-                            user.nickname,
-                            text,
-                            System.currentTimeMillis()
-                    );
-                    message.status = "SENT";
-                    messagesRef.child(messageId).setValue(message)
-                            .addOnSuccessListener(aVoid -> {
-                                messagesRef.child(messageId).child("status").setValue("DELIVERED");
-                                messageEt.setText("");
-                            });
-                }
-                @Override public void onCancelled(@NonNull DatabaseError error) {}
-            });
-        }
+        String text = messageEt.getText().toString().trim();
+        if (text.isEmpty()) return;
+
+        usersRef.child(currentUserId).addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                User user = snapshot.getValue(User.class);
+                String messageId = messagesRef.push().getKey();
+                Message message = new Message(
+                        currentUserId,
+                        user.nickname,
+                        text,
+                        System.currentTimeMillis()
+                );
+                message.status = "DELIVERED";
+                messagesRef.child(messageId).setValue(message)
+                        .addOnSuccessListener(aVoid -> messageEt.setText(""));
+            }
+            @Override public void onCancelled(@NonNull DatabaseError error) {}
+        });
     }
 
     public static class Message {
@@ -144,7 +246,9 @@ public class ChatActivity extends AppCompatActivity {
         public String senderNickname;
         public String text;
         public long timestamp;
-        public String status = "SENT"; // "SENT", "DELIVERED", "READ"
+        public String status;
+        public boolean edited;
+        public boolean deleted;
 
         public Message() {}
 
@@ -153,15 +257,9 @@ public class ChatActivity extends AppCompatActivity {
             this.senderNickname = senderNickname;
             this.text = text;
             this.timestamp = timestamp;
-            this.status = "SENT";
-        }
-
-        @Override
-        public String toString() {
-            return String.format("%s: %s\n%s",
-                    senderId, // добавить это поле в класс
-                    text,
-                    new SimpleDateFormat("dd.MM HH:mm", Locale.getDefault()).format(timestamp));
+            this.status = "DELIVERED";
+            this.edited = false;
+            this.deleted = false;
         }
     }
 }

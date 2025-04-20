@@ -38,6 +38,7 @@ dependencies {
     implementation(libs.material)
     implementation(libs.activity)
     implementation(libs.constraintlayout)
+    implementation (libs.appcompat.v161)
 
     implementation(libs.firebase.auth)
     implementation(libs.firebase.database)

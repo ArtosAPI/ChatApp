@@ -74,6 +74,12 @@ public class MainActivity extends AppCompatActivity {
             startActivity(intent);
         });
 
+        chatsListView.setOnItemLongClickListener((parent, view, position, id) -> {
+            Chat chat = chatList.get(position);
+            showDeleteChatDialog(chat);
+            return true;
+        });
+
         // Кнопка для поиска пользователя по email и создания чата
         Button addChatBtn = findViewById(R.id.addChatBtn);
         addChatBtn.setOnClickListener(v -> showAddChatDialog());
@@ -85,6 +91,47 @@ public class MainActivity extends AppCompatActivity {
             startActivity(new Intent(this, LoginActivity.class));
             finish();
         });
+    }
+
+    private void showDeleteChatDialog(Chat chat) {
+        new AlertDialog.Builder(this)
+                .setTitle("Удалить чат?")
+                .setMessage("Чат будет удален у обоих участников")
+                .setPositiveButton("Удалить", (dialog, which) -> deleteChat(chat))
+                .setNegativeButton("Отмена", null)
+                .show();
+    }
+
+    private void deleteChat(Chat chat) {
+        chatsRef.child(chat.chatId).removeValue()
+                .addOnSuccessListener(aVoid -> {
+                    usersRef.child(currentUserId).child("chats").child(chat.chatId).removeValue();
+
+                    chatsRef.child(chat.chatId).child("members").addListenerForSingleValueEvent(new ValueEventListener() {
+                        @Override
+                        public void onDataChange(@NonNull DataSnapshot snapshot) {
+                            List<String> members = new ArrayList<>();
+                            for (DataSnapshot memberSnap : snapshot.getChildren()) {
+                                members.add(memberSnap.getValue(String.class));
+                            }
+
+                            // Добавлены проверки на размер списка
+                            if (members.size() == 2) {
+                                String otherUserId = members.get(0).equals(currentUserId) ? members.get(1) : members.get(0);
+                                usersRef.child(otherUserId).child("chats").child(chat.chatId).removeValue();
+                            } else {
+                                Log.e("DeleteChat", "Invalid members count: " + members.size());
+                            }
+                        }
+
+                        @Override
+                        public void onCancelled(@NonNull DatabaseError error) {}
+                    });
+
+                    chatList.remove(chat);
+                    adapter.notifyDataSetChanged();
+                    Toast.makeText(this, "Чат удален", Toast.LENGTH_SHORT).show();
+                });
     }
 
     private void loadUserChats() {
@@ -179,7 +226,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // Класс для отображения чатов
-    class Chat {
+    public static class Chat {
         String chatId;
         String displayName;
         public Chat(String chatId, String displayName) {
