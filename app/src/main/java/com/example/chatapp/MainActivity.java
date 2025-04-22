@@ -1,6 +1,9 @@
 package com.example.chatapp;
 
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.content.Intent;
+import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.ArrayAdapter;
@@ -13,13 +16,17 @@ import androidx.activity.EdgeToEdge;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.app.NotificationCompat;
 import androidx.core.graphics.Insets;
 import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
+import androidx.work.PeriodicWorkRequest;
+import androidx.work.WorkManager;
 
 import com.google.firebase.FirebaseApp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseUser;
+import com.google.firebase.database.ChildEventListener;
 import com.google.firebase.database.DataSnapshot;
 import com.google.firebase.database.DatabaseError;
 import com.google.firebase.database.DatabaseReference;
@@ -31,6 +38,7 @@ import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -91,6 +99,18 @@ public class MainActivity extends AppCompatActivity {
             startActivity(new Intent(this, LoginActivity.class));
             finish();
         });
+
+        scheduleMessageCheck();
+    }
+
+    private void scheduleMessageCheck() {
+        PeriodicWorkRequest workRequest = new PeriodicWorkRequest.Builder(
+                MessageCheckWorker.class,
+                3, // Интервал в минутах
+                TimeUnit.MINUTES
+        ).build();
+
+        WorkManager.getInstance(this).enqueue(workRequest);
     }
 
     private void showDeleteChatDialog(Chat chat) {
@@ -158,21 +178,52 @@ public class MainActivity extends AppCompatActivity {
                 String member2 = snapshot.child("members").child("1").getValue(String.class);
                 String otherUserId = member1.equals(currentUserId) ? member2 : member1;
 
-                // Получаем никнейм другого пользователя
                 usersRef.child(otherUserId).addListenerForSingleValueEvent(new ValueEventListener() {
                     @Override
                     public void onDataChange(@NonNull DataSnapshot userSnapshot) {
                         String nickname = userSnapshot.child("nickname").getValue(String.class);
                         chatList.add(new Chat(chatId, nickname));
                         adapter.notifyDataSetChanged();
+
+                        // Добавляем слушатель для новых сообщений
+                        DatabaseReference messagesRef = chatsRef.child(chatId).child("messages");
+                        messagesRef.addChildEventListener(new ChildEventListener() {
+                            @Override
+                            public void onChildAdded(@NonNull DataSnapshot snapshot, String prev) {
+                                if (!ChatAppApplication.isAppInForeground()) {
+                                    showNotification("Новое сообщение", "Вам пришло сообщение!");
+                                }
+                            }
+                            @Override public void onChildChanged(@NonNull DataSnapshot s, String p) {}
+                            @Override public void onChildRemoved(@NonNull DataSnapshot s) {}
+                            @Override public void onChildMoved(@NonNull DataSnapshot s, String p) {}
+                            @Override public void onCancelled(@NonNull DatabaseError e) {}
+                        });
                     }
-                    @Override
-                    public void onCancelled(@NonNull DatabaseError error) {}
+                    @Override public void onCancelled(@NonNull DatabaseError error) {}
                 });
             }
-            @Override
-            public void onCancelled(@NonNull DatabaseError error) {}
+            @Override public void onCancelled(@NonNull DatabaseError error) {}
         });
+    }
+
+    private void showNotification(String title, String message) {
+        NotificationManager manager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    "default", "Messages", NotificationManager.IMPORTANCE_DEFAULT
+            );
+            manager.createNotificationChannel(channel);
+        }
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, "default")
+                .setSmallIcon(R.drawable.ic_launcher_foreground)
+                .setContentTitle(title)
+                .setContentText(message)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT);
+
+        manager.notify((int) System.currentTimeMillis(), builder.build());
     }
 
     private void showAddChatDialog() {

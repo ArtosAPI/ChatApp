@@ -39,6 +39,8 @@ dependencies {
     implementation(libs.activity)
     implementation(libs.constraintlayout)
     implementation (libs.appcompat.v161)
+    implementation (libs.work.runtime)
+    implementation (libs.guava)
 
     implementation(libs.firebase.auth)
     implementation(libs.firebase.database)
