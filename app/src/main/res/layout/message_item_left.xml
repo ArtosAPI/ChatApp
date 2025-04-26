@@ -21,6 +21,13 @@
             android:textColor="@android:color/black"
             android:textSize="16sp"/>
 
+        <ImageView
+            android:id="@+id/imageView"
+            android:layout_width="200dp"
+            android:layout_height="200dp"
+            android:visibility="gone"
+            android:scaleType="centerCrop"/>
+
         <TextView
             android:id="@+id/tvTime"
             android:layout_width="wrap_content"

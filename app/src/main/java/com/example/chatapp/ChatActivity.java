@@ -3,7 +3,12 @@ package com.example.chatapp;
 import android.app.AlertDialog;
 import android.content.Context;
 import android.content.DialogInterface;
+import android.content.Intent;
+import android.graphics.Bitmap;
+import android.net.Uri;
 import android.os.Bundle;
+import android.provider.MediaStore;
+import android.util.Base64;
 import android.view.ContextMenu;
 import android.view.LayoutInflater;
 import android.view.MenuItem;
@@ -30,6 +35,8 @@ import com.google.firebase.database.DatabaseReference;
 import com.google.firebase.database.FirebaseDatabase;
 import com.google.firebase.database.ValueEventListener;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -45,7 +52,8 @@ public class ChatActivity extends AppCompatActivity {
     private Button sendBtn;
     private List<Message> messageList = new ArrayList<>();
     private MessageAdapter adapter;
-
+    private static final int PICK_IMAGE = 1;
+    private Button btnAttach;
     private Message selectedMessage;
     private int selectedPosition;
 
@@ -77,12 +85,55 @@ public class ChatActivity extends AppCompatActivity {
         messagesLv = findViewById(R.id.messagesLv);
         messageEt = findViewById(R.id.messageEt);
         sendBtn = findViewById(R.id.sendBtn);
+        btnAttach = findViewById(R.id.btnAttach);
 
         setupAdapter();
         loadMessages();
         setupListViewLongClick();
 
+        btnAttach.setOnClickListener(v -> {
+            Intent intent = new Intent(Intent.ACTION_PICK);
+            intent.setType("image/*");
+            startActivityForResult(intent, PICK_IMAGE);
+        });
         sendBtn.setOnClickListener(v -> sendMessage());
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == PICK_IMAGE && resultCode == RESULT_OK) {
+            Uri imageUri = data.getData();
+            try {
+                Bitmap bitmap = MediaStore.Images.Media.getBitmap(getContentResolver(), imageUri);
+                sendImage(bitmap);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    private void sendImage(Bitmap bitmap) {
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 50, byteArrayOutputStream);
+        String imageBase64 = Base64.encodeToString(byteArrayOutputStream.toByteArray(), Base64.DEFAULT);
+
+        usersRef.child(currentUserId).addListenerForSingleValueEvent(new ValueEventListener() {
+            @Override
+            public void onDataChange(@NonNull DataSnapshot snapshot) {
+                User user = snapshot.getValue(User.class);
+                String messageId = messagesRef.push().getKey();
+                Message message = new Message(
+                        currentUserId,
+                        user.nickname,
+                        System.currentTimeMillis(),
+                        imageBase64
+                );
+                message.isImage = true;
+                messagesRef.child(messageId).setValue(message);
+            }
+            @Override public void onCancelled(@NonNull DatabaseError error) {}
+        });
     }
 
     private void setupListViewLongClick() {
@@ -219,25 +270,28 @@ public class ChatActivity extends AppCompatActivity {
 
     private void sendMessage() {
         String text = messageEt.getText().toString().trim();
-        if (text.isEmpty()) return;
+        if (!text.isEmpty()) {
+            usersRef.child(currentUserId).addListenerForSingleValueEvent(new ValueEventListener() {
+                @Override
+                public void onDataChange(@NonNull DataSnapshot snapshot) {
+                    User user = snapshot.getValue(User.class);
+                    String messageId = messagesRef.push().getKey();
+                    Message message = new Message(
+                            currentUserId,
+                            user.nickname,
+                            text,
+                            System.currentTimeMillis()
+                    );
+                    message.status = "DELIVERED";
+                    messagesRef.child(messageId).setValue(message)
+                            .addOnSuccessListener(aVoid -> messageEt.setText(""));
+                }
 
-        usersRef.child(currentUserId).addListenerForSingleValueEvent(new ValueEventListener() {
-            @Override
-            public void onDataChange(@NonNull DataSnapshot snapshot) {
-                User user = snapshot.getValue(User.class);
-                String messageId = messagesRef.push().getKey();
-                Message message = new Message(
-                        currentUserId,
-                        user.nickname,
-                        text,
-                        System.currentTimeMillis()
-                );
-                message.status = "DELIVERED";
-                messagesRef.child(messageId).setValue(message)
-                        .addOnSuccessListener(aVoid -> messageEt.setText(""));
-            }
-            @Override public void onCancelled(@NonNull DatabaseError error) {}
-        });
+                @Override
+                public void onCancelled(@NonNull DatabaseError error) {
+                }
+            });
+        }
     }
 
     public static class Message {
@@ -249,6 +303,8 @@ public class ChatActivity extends AppCompatActivity {
         public String status;
         public boolean edited;
         public boolean deleted;
+        public String imageBase64 = "";
+        public boolean isImage = false;
 
         public Message() {}
 
@@ -260,6 +316,17 @@ public class ChatActivity extends AppCompatActivity {
             this.status = "DELIVERED";
             this.edited = false;
             this.deleted = false;
+            this.isImage = false;
+        }
+
+        // Новый конструктор для изображений
+        public Message(String senderId, String senderNickname, long timestamp, String imageBase64) {
+            this.senderId = senderId;
+            this.senderNickname = senderNickname;
+            this.imageBase64 = imageBase64;
+            this.timestamp = timestamp;
+            this.isImage = true;
+            this.status = "DELIVERED";
         }
     }
 }

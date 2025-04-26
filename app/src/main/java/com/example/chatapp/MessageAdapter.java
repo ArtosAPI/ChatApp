@@ -1,10 +1,14 @@
 package com.example.chatapp;
 
 import android.content.Context;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.util.Base64;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ArrayAdapter;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import java.text.SimpleDateFormat;
@@ -76,24 +80,40 @@ public class MessageAdapter extends ArrayAdapter<ChatActivity.Message> {
         holder.tvMessage = view.findViewById(R.id.tvMessage);
         holder.tvTime = view.findViewById(R.id.tvTime);
         holder.tvStatus = view.findViewById(R.id.tvStatus);
+        holder.imageView = view.findViewById(R.id.imageView);
         view.setTag(holder);
 
         return view;
     }
 
     private void setupMessageView(ViewHolder holder, ChatActivity.Message message) {
-        SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
-        String time = sdf.format(new Date(message.timestamp));
+        if (message.isImage) {
+            holder.tvMessage.setVisibility(View.GONE);
+            holder.imageView.setVisibility(View.VISIBLE);
 
-        String messageText = message.edited ? message.text + " (изменено)" : message.text;
-        holder.tvMessage.setText(messageText);
-        holder.tvTime.setText(time);
+            // Декодируем Base64
+            try {
+                byte[] decodedBytes = Base64.decode(message.imageBase64, Base64.DEFAULT);
+                Bitmap bitmap = BitmapFactory.decodeByteArray(decodedBytes, 0, decodedBytes.length);
+                holder.imageView.setImageBitmap(bitmap);
+            } catch (Exception e) {
+                holder.imageView.setVisibility(View.GONE);
+                holder.tvMessage.setText("Ошибка загрузки изображения");
+                holder.tvMessage.setVisibility(View.VISIBLE);
+            }
+
+        } else {
+            holder.imageView.setVisibility(View.GONE);
+            holder.tvMessage.setVisibility(View.VISIBLE);
+            String messageText = message.edited ? message.text + " (изменено)" : message.text;
+            holder.tvMessage.setText(messageText);
+        }
+
+        SimpleDateFormat sdf = new SimpleDateFormat("HH:mm", Locale.getDefault());
+        holder.tvTime.setText(sdf.format(new Date(message.timestamp)));
 
         if (message.senderId.equals(currentUserId)) {
             holder.tvStatus.setText(getStatusIcon(message.status));
-            holder.tvStatus.setVisibility(View.VISIBLE);
-        } else {
-            holder.tvStatus.setVisibility(View.GONE);
         }
     }
 
@@ -108,6 +128,7 @@ public class MessageAdapter extends ArrayAdapter<ChatActivity.Message> {
 
     static class ViewHolder {
         TextView tvMessage;
+        ImageView imageView;
         TextView tvTime;
         TextView tvStatus;
     }
