@@ -41,6 +41,8 @@ public class LoginActivity extends AppCompatActivity {
 
         // Обработка входа
         loginBtn.setOnClickListener(v -> loginUser());
+        Button forgotPasswordBtn = findViewById(R.id.forgotPasswordBtn);
+        forgotPasswordBtn.setOnClickListener(v -> showPasswordResetDialog());
 
         // Переход на экран регистрации
         goToRegisterBtn.setOnClickListener(v -> {
@@ -52,6 +54,44 @@ public class LoginActivity extends AppCompatActivity {
         Toolbar toolbar = findViewById(R.id.toolbar);
         setSupportActionBar(toolbar);
 
+    }
+
+    // Новый метод для диалога восстановления
+    private void showPasswordResetDialog() {
+        AlertDialog.Builder builder = new AlertDialog.Builder(this);
+        builder.setTitle("Восстановление пароля");
+
+        final EditText emailInput = new EditText(this);
+        emailInput.setHint("Введите ваш email");
+        builder.setView(emailInput);
+
+        builder.setPositiveButton("Отправить", (dialog, which) -> {
+            String email = emailInput.getText().toString().trim();
+            if (!email.isEmpty()) {
+                sendPasswordResetEmail(email);
+            } else {
+                Toast.makeText(this, "Введите email", Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        builder.setNegativeButton("Отмена", null);
+        builder.show();
+    }
+
+    // Метод для отправки письма
+    private void sendPasswordResetEmail(String email) {
+        mAuth.sendPasswordResetEmail(email)
+                .addOnCompleteListener(task -> {
+                    if (task.isSuccessful()) {
+                        Toast.makeText(this,
+                                "Инструкции отправлены на email",
+                                Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(this,
+                                "Ошибка: " + task.getException().getMessage(),
+                                Toast.LENGTH_SHORT).show();
+                    }
+                });
     }
 
     @Override

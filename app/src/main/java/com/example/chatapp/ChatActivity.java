@@ -319,7 +319,6 @@ public class ChatActivity extends AppCompatActivity {
             this.isImage = false;
         }
 
-        // Новый конструктор для изображений
         public Message(String senderId, String senderNickname, long timestamp, String imageBase64) {
             this.senderId = senderId;
             this.senderNickname = senderNickname;
